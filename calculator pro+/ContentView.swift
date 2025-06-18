@@ -59,7 +59,6 @@ enum ButtonType {
     case number(Int)
     case operation(String)
     case function(String)
-    case memory(String)
     case navigation(String)
     case special(String)
 }
@@ -98,6 +97,10 @@ struct ContentView: View {
     @State private var currentFraction: Fraction?
     @State private var isEditingFraction: Bool = false
     @State private var cursorPosition: Int = 0
+    @State private var selectedModeIndex: Int = 0 // 主屏幕中选中的模式索引
+    
+    // 可选择的模式列表（不包括home）
+    private let selectableModes: [CalculatorMode] = [.calc, .stat, .table, .equation, .inequality, .complex, .base, .matrix, .vector, .ratio]
     
     // 定时器用于光标闪烁
     let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -189,30 +192,44 @@ struct ContentView: View {
     
     // 主屏幕内容
     private var homeScreenContent: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("选择功能模式")
                 .font(.system(size: 14, family: .monospaced))
                 .foregroundColor(.black)
+                .padding(.bottom, 5)
             
-            Text("1. 计算 (CALC)")
-                .font(.system(size: 12, family: .monospaced))
-                .foregroundColor(.black)
+            // 使用网格布局显示模式选项
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
+                ForEach(Array(selectableModes.enumerated()), id: \.offset) { index, mode in
+                    HStack(spacing: 8) {
+                        Text(mode.rawValue)
+                            .font(.system(size: 16))
+                            .foregroundColor(mode.color)
+                        
+                        Text(mode.title)
+                            .font(.system(size: 12, family: .monospaced))
+                            .foregroundColor(.black)
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(index == selectedModeIndex ? Color.black.opacity(0.2) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(index == selectedModeIndex ? Color.black : Color.clear, lineWidth: 1)
+                    )
+                }
+            }
             
-            Text("2. 统计 (STAT)")
-                .font(.system(size: 12, family: .monospaced))
-                .foregroundColor(.black)
+            Spacer()
             
-            Text("3. 函数表格 (TABLE)")
-                .font(.system(size: 12, family: .monospaced))
-                .foregroundColor(.black)
-            
-            Text("4. 方程 (EQN)")
-                .font(.system(size: 12, family: .monospaced))
-                .foregroundColor(.black)
-            
-            Text("5. 不等式 (INEQ)")
-                .font(.system(size: 12, family: .monospaced))
-                .foregroundColor(.black)
+            Text("使用方向键选择，按=确认")
+                .font(.system(size: 10, family: .monospaced))
+                .foregroundColor(.black.opacity(0.7))
         }
     }
     
@@ -249,12 +266,12 @@ struct ContentView: View {
     // MARK: - 键盘视图
     private var keyboardView: some View {
         VStack(spacing: 8) {
-            // 第一行：内存和SHIFT
+            // 第一行：SHIFT和空位
             HStack(spacing: 8) {
-                calculatorButton("M+", type: .memory("M+"))
-                calculatorButton("M-", type: .memory("M-"))
-                calculatorButton("MR", type: .memory("MR"))
-                calculatorButton("MC", type: .memory("MC"))
+                calculatorButton("", type: .special(""))
+                calculatorButton("", type: .special(""))
+                calculatorButton("", type: .special(""))
+                calculatorButton("", type: .special(""))
                 calculatorButton("SHIFT", type: .special("SHIFT"))
             }
             
@@ -331,7 +348,9 @@ struct ContentView: View {
     // MARK: - 按钮组件
     private func calculatorButton(_ title: String, type: ButtonType) -> some View {
         Button(action: {
-            handleButtonPress(title, type: type)
+            if !title.isEmpty {
+                handleButtonPress(title, type: type)
+            }
         }) {
             VStack(spacing: 2) {
                 Text(title)
@@ -342,7 +361,7 @@ struct ContentView: View {
                     .minimumScaleFactor(0.8)
             }
             .frame(width: getButtonWidth(title), height: 45)
-            .background(getButtonColor(type))
+            .background(getButtonColor(type, title: title))
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -350,6 +369,7 @@ struct ContentView: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .disabled(title.isEmpty)
     }
     
     // 获取按钮宽度
@@ -372,6 +392,10 @@ struct ContentView: View {
     
     // 获取按钮文字颜色
     private func getButtonTextColor(_ title: String, type: ButtonType) -> Color {
+        if title.isEmpty {
+            return .clear
+        }
+        
         switch type {
         case .number(_):
             return .white
@@ -382,8 +406,6 @@ struct ContentView: View {
                 return .yellow
             }
             return .white
-        case .memory(_):
-            return .white
         case .navigation(_):
             return .white
         case .special(_):
@@ -392,7 +414,11 @@ struct ContentView: View {
     }
     
     // 获取按钮背景颜色
-    private func getButtonColor(_ type: ButtonType) -> Color {
+    private func getButtonColor(_ type: ButtonType, title: String) -> Color {
+        if title.isEmpty {
+            return Color.clear
+        }
+        
         switch type {
         case .number(_):
             return Color.gray.opacity(0.8)
@@ -400,8 +426,6 @@ struct ContentView: View {
             return Color.orange.opacity(0.8)
         case .function(_):
             return Color.blue.opacity(0.8)
-        case .memory(_):
-            return Color.purple.opacity(0.8)
         case .navigation(_):
             return Color.green.opacity(0.8)
         case .special(_):
@@ -418,8 +442,6 @@ struct ContentView: View {
             handleOperation(op)
         case .function(let func):
             handleFunction(func)
-        case .memory(let mem):
-            handleMemory(mem)
         case .navigation(let nav):
             handleNavigation(nav)
         case .special(let special):
@@ -430,8 +452,7 @@ struct ContentView: View {
     // 处理数字输入
     private func handleNumberInput(_ number: Int) {
         if currentMode == .home {
-            // 在主屏幕中，数字键用于选择模式
-            selectMode(number)
+            return // 在主屏幕中数字键不再用于选择模式
         } else if isEditingFraction, var fraction = currentFraction {
             // 编辑分数
             if fraction.isEditingNumerator {
@@ -450,20 +471,18 @@ struct ContentView: View {
         }
     }
     
-    // 选择模式
-    private func selectMode(_ number: Int) {
-        let modes: [CalculatorMode] = [.calc, .stat, .table, .equation, .inequality, .complex, .base, .matrix, .vector, .ratio]
-        if number >= 1 && number <= modes.count {
-            currentMode = modes[number - 1]
+    // 处理运算符
+    private func handleOperation(_ operation: String) {
+        if currentMode == .home && operation == "=" {
+            // 在主屏幕中按=键确认选择
+            currentMode = selectableModes[selectedModeIndex]
             display = "0"
             expression = ""
             isEditingFraction = false
             currentFraction = nil
+            return
         }
-    }
-    
-    // 处理运算符
-    private func handleOperation(_ operation: String) {
+        
         switch operation {
         case "+", "-", "×", "÷":
             if isEditingFraction, let fraction = currentFraction, let value = fraction.value {
@@ -524,47 +543,49 @@ struct ContentView: View {
         return Double(n) * factorial(n - 1)
     }
     
-    // 处理内存操作
-    private func handleMemory(_ memoryOp: String) {
-        guard let value = Double(display) else { return }
-        
-        switch memoryOp {
-        case "M+":
-            memory += value
-        case "M-":
-            memory -= value
-        case "MR":
-            display = String(memory)
-        case "MC":
-            memory = 0
-        default:
-            break
-        }
-    }
-    
     // 处理导航
     private func handleNavigation(_ navigation: String) {
         switch navigation {
         case "MODE":
             currentMode = .home
+            selectedModeIndex = 0
             display = "0"
             expression = ""
             isEditingFraction = false
             currentFraction = nil
         case "EXIT":
             currentMode = .home
+            selectedModeIndex = 0
             display = "0"
             expression = ""
             isEditingFraction = false
             currentFraction = nil
-        case "▲", "▼":
-            if isEditingFraction, var fraction = currentFraction {
-                fraction.isEditingNumerator.toggle()
+        case "▲":
+            if currentMode == .home {
+                selectedModeIndex = max(0, selectedModeIndex - 2)
+            } else if isEditingFraction, var fraction = currentFraction {
+                fraction.isEditingNumerator = true
                 currentFraction = fraction
             }
-        case "◀", "▶":
-            if isEditingFraction, var fraction = currentFraction {
-                fraction.isEditingNumerator.toggle()
+        case "▼":
+            if currentMode == .home {
+                selectedModeIndex = min(selectableModes.count - 1, selectedModeIndex + 2)
+            } else if isEditingFraction, var fraction = currentFraction {
+                fraction.isEditingNumerator = false
+                currentFraction = fraction
+            }
+        case "◀":
+            if currentMode == .home {
+                selectedModeIndex = max(0, selectedModeIndex - 1)
+            } else if isEditingFraction, var fraction = currentFraction {
+                fraction.isEditingNumerator = true
+                currentFraction = fraction
+            }
+        case "▶":
+            if currentMode == .home {
+                selectedModeIndex = min(selectableModes.count - 1, selectedModeIndex + 1)
+            } else if isEditingFraction, var fraction = currentFraction {
+                fraction.isEditingNumerator = false
                 currentFraction = fraction
             }
         default:
